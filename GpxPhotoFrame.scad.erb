@@ -1,0 +1,362 @@
+// Mike's Experiment for Elevation 3D Print
+
+// Model type
+// Variables below use an array with this index.
+// 0: No Photo
+// 1: 4x6 on Prusa MINI
+// 2: 2.5x3.5 on Prusa MINI
+// 3: 2.5x3.5 extra text on Prusa MINI
+// 4: 4x6 on Prusa i3
+type = <%= model_type %>;
+
+// Object to print
+// "frame", "back"
+object_type = "<%= object_type %>";
+
+// The activity title. Max X chars.
+title = "<%= title %>";
+
+// Bold fonts print best (especially at small sizes)
+// Make sure these fonts are installed
+font = "Roboto Mono:style=bold";
+title_font = "Roboto:style=bold";
+
+text1_config = ["Distance: 118 mi", "118 mi", "118 mi", "Distance: 118 mi", "Distance: 118 mi"];
+// Stats text. E.g. Total distance.
+text1 = "<%= text1 %>";
+
+// Stats text. E.g. Total elevation.
+text2_config = ["Elevation: 10,800 ft", "10,800 ft", "10,800 ft", "Elevation: 10,800 ft", "Elevation: 10,800 ft",];
+text2 = "<%= text2 %>";
+
+text3_config = ["Elapsed Time: 12:36:05", "", "", "Elapsed Time: 12:36:05", "Elapsed Time: 12:36:05"];
+text3 = "<%= text3 %>";
+
+// Elevation data. Length should match distance data.
+elevation_values = <%= elevation %>;
+//elevation_values = [10, 8, 1, 9];
+
+// Distance data. Length should match elevation data.
+distance_values = <%= distance %>;
+//distance_values = [0, 1, 2, 3];
+
+// Total output width (mm)
+width_config = [180, 180, 180, 180, 230];
+width = width_config[type];
+
+// Total output height (mm)
+height_config = [100, 180, 140, 160, 200];
+height = height_config[type];
+
+// Output thickness (not including text) (mm)
+// thickness = 20;
+thickness = 20;
+
+// Text thickness (in addition to base) (mm)
+text_thickness = 2;
+
+// Margins (around text) (mm)
+margin = 5;
+
+// Font size (mm height)
+font_size = 5;
+
+// Title font size (mm height)
+big_font_size = 8;
+
+// Tolerance around the outside of the photo on the back of the frame. (Probably no adjustment needed.)
+outer_photo_margin = 0.5;
+
+// Where the front of the frame overlaps the photo. (Probably no adjustment needed.)
+inner_photo_margin = 3;
+
+// Thickness of the back plate that holds the photo. (Probably no adjustment needed.)
+back_plate_thickness = 1;
+
+// END Params.
+// Everything below here is generation code.
+
+function dist2d(a, b) = sqrt((b.x-a.x)^2 + (b.y-a.y)^2);
+
+// Photo positioning
+nominal_photo_dimensions_config = [[0, 0], [154, 103], [88.9, 63.5], [88.9, 63.5], [154, 103]];
+inner_photo_position_y = [0, margin * 2 + big_font_size, margin * 2 + big_font_size, margin + big_font_size + 2*margin + 3*font_size, margin + big_font_size + 2*margin + 3*font_size];
+outer_photo_dimensions = [nominal_photo_dimensions_config[type].x + 2*outer_photo_margin, nominal_photo_dimensions_config[type].y + 2*outer_photo_margin];
+inner_photo_dimensions = [nominal_photo_dimensions_config[type].x - 2*inner_photo_margin, nominal_photo_dimensions_config[type].y - 2*inner_photo_margin];
+inner_photo_position = [(width - inner_photo_dimensions.x) / 2, inner_photo_position_y[type]];
+
+// The height of the rectangular text plate.
+lines = 4;
+plate_height_config = [
+  margin * (lines + 1) + 3 * font_size + big_font_size,
+  3 * margin + big_font_size + inner_photo_dimensions.y,
+  3 * margin + big_font_size + inner_photo_dimensions.y,
+  margin + big_font_size + 2*margin + 3*font_size + inner_photo_dimensions.y + margin,
+  margin + big_font_size + 2*margin + 3*font_size + inner_photo_dimensions.y + margin
+];
+plate_height = plate_height_config[type];
+
+
+/**
+ * Generates a 3D "extruded cylinder" polyline.
+ *
+ * @param points should be an array of (x, y) pairs to plot.
+ */
+module polyline(points, diameter = 2) {
+  difference() {
+    union() {
+      for(i = [0:len(points)-2]) {
+        length=dist2d(points[i], points[i+1]);
+        dx = points[i+1].x - points[i].x;
+        dy = points[i+1].y - points[i].y;
+        translate(points[i]) {
+          rotate([0, 90, atan(dy/dx)]) {
+            linear_extrude(length) {
+              circle(d = diameter, $fn=50);
+            }
+          }
+          sphere(d=diameter, $fn=50);
+        }
+        translate(points[i+1]) {
+          sphere(d=diameter, $fn=50);
+        }
+      }
+    }
+    translate([-10, -height/2, -5]) cube([10, height, 10]);
+    translate([width, -height/2, -5]) cube([10, height, 10]);
+  }
+}
+
+/**
+ * Creates a 3D "chart" from x and y value arrays.
+ * x and y streams must have the same length.
+ */
+module chart(x_values, y_values) {
+  // The chart takes up the remaining height not taken by the plate.
+  // Take off an additional (thickness) for the 45deg slope (to be added on top)
+  chart_height = height - plate_height - thickness;
+  
+  // Convert the values (scalars) to points (x, y).
+  x_max = max(x_values);
+  y_max = max(y_values);
+  y_min = min(y_values);
+  chart_points = [
+    for( i = [0 : len(x_values) - 1])
+    [
+      x_values[i] * width / x_max,
+      (y_values[i] - y_min) * (chart_height - 0.1) / (y_max - y_min) + 0.1
+    ]
+  ];
+  
+   
+  // Convert the line points into a polygon (the entire plaque).
+  chart_poly = concat([[0, 0]], chart_points, [[width, 0]]); 
+    
+  // Extrude the plaque.
+  linear_extrude(thickness) {
+    polygon(chart_poly);
+  }
+  
+  topper_points = [
+    for( i = [len(chart_points) - 1 : -1 : 0])
+    [
+      chart_points[i].x,
+      chart_points[i].y + thickness // Reuse thickness for a 45deg angle
+    ]
+  ];
+  shear_matrix = [
+    [1, 0, 0, 0],
+    [0, 1, -1, -0.001],
+    [0, 0, 1, 0]
+  ];
+  intersection() {
+    translate([0, 0.001, 0]) multmatrix(shear_matrix) {
+      linear_extrude(thickness) {
+        polygon(concat(chart_points, topper_points));
+      }
+    }
+    // Don't let it go below the x axis.
+    cube([width, chart_height+thickness, thickness]);
+  }
+
+  
+  // The current polyline implementation is exceptionally slow.
+  // translate([0, 0, thickness]) {
+  //   color("orange") polyline(chart_points);
+  // }
+}
+
+text_1_y = [
+  plate_height - margin - font_size,
+  margin + font_size + 1,
+  margin + font_size + 1,
+  margin + big_font_size + 3*margin/2 + 2*font_size,
+  margin + big_font_size + 3*margin/2 + 2*font_size
+];
+text_2_y = [
+  plate_height - 2 * margin - 2 * font_size,
+  margin,
+  margin,
+  margin + big_font_size + margin + font_size,
+  margin + big_font_size + margin + font_size
+];
+text_3_y = [
+  plate_height - 3 * margin - 3 * font_size,
+  0,
+  0,
+  margin + big_font_size + margin/2,
+  margin + big_font_size + margin/2
+];
+logo_y = [
+  2 * margin + big_font_size,
+  margin,
+  margin,
+  3*margin/2 + big_font_size,
+  3*margin/2 + big_font_size
+];
+logo_height = [
+  plate_height - 3 * margin - big_font_size,
+  big_font_size,
+  big_font_size,
+  (3 * font_size + margin) * 2,
+  (3 * font_size + margin) * 2
+];
+
+/**
+ * The "text plate" is a 3D rectangular plaque below the chart.
+ * It contains all the non-chart info like text, logos, etc.
+ */
+module text_plate() {
+  cube([width, plate_height, thickness]);
+
+  // For text, x is right/left alignment, y is base of the line
+  translate([width - margin, text_1_y[type], thickness - 0.001]) {
+    color("orange") linear_extrude(text_thickness) {
+      text(text1, size = font_size, font = font, halign = "right");
+    }
+  }
+  translate([width - margin, text_2_y[type], thickness - 0.001]) {
+    color("orange") linear_extrude(text_thickness) {
+      text(text2, size = font_size, font = font, halign = "right");
+    }
+  }
+  if (text3 != "") {
+    translate([width - margin, text_3_y[type], thickness - 0.001]) {
+      color("orange") linear_extrude(text_thickness) {
+        text(text3, size = font_size, font = font, halign = "right");
+      }
+    }
+  }
+
+  // Left Aligned Title
+  translate([margin, margin, thickness - 0.001]) {
+    color("orange") linear_extrude(text_thickness) {
+      text(title, size = big_font_size, font = title_font, halign = "left");
+    }
+  }
+}
+
+photo_box = [
+  false,
+  true,
+  true,
+  true,
+  true
+];
+
+/**
+ * Generates a 3D "hanger hole" for hanging on a nail or hook.
+ * Note that this module creates a 3D volume that can be removed from another
+ * (e.g. with difference).
+ */
+module hanger_hole() {
+  translate([0, 0, 1]) {
+    hull() {
+      cylinder(h=2, r=3, $fn=30);
+      translate([0, 5, 0]) cylinder(h=2, r=3, $fn=30);
+    }
+  }
+  hull() {
+    cylinder(h=1.001, r=1.5, $fn=20);
+    translate([0, 5, 0]) cylinder(h=1.001, r=1.5, $fn=20);
+  }
+  cylinder(h=1.001, r=3, $fn=30);
+}
+
+/* Clip for the back plate */
+module clip() {
+  l1 = 10;
+  w = 4;
+  h = 6;
+  a = 15;
+  l_tab = h / cos(a);
+  
+  cube([l1, w, back_plate_thickness]);
+  
+  translate([l1, 0, 0]) rotate([0, a, 0]) translate([-back_plate_thickness, 0, 0]) cube([back_plate_thickness, w, l_tab]);
+  translate([l1+2*h*tan(a), 0, 0]) rotate([0, -a, 0]) cube([back_plate_thickness, w, l_tab]);
+  
+  translate([l1+2*h*tan(a), 0, 0]) cube([4, w, back_plate_thickness]);
+  
+  translate([l1+h*tan(a), 0, h]) difference() {
+    rotate([-90, 0, 0]) cylinder(h=w, r=back_plate_thickness, $fn=30);
+    translate([0, 0, -10]) cube(20, center=true);
+  }
+}
+
+// Combine all the parts
+if (object_type == "frame") {
+  difference() {
+    union() {
+      if (type == 6) {
+        translate([0, plate_height - 0.001, 0]) cube([width, height - plate_height, thickness]);
+      } else {
+        translate([0, plate_height - 0.001, 0]) {
+          chart(distance_values, elevation_values);
+        }
+      }
+      text_plate();
+    }
+
+    // Hangers on the back.
+    // These need to go on the text plate because we don't know the
+    // shape of the chart in advance.
+    translate([20, plate_height-10, -0.001]) hanger_hole();
+    translate([width-20, plate_height-10, -0.001]) hanger_hole();
+
+    if (photo_box[type]) {
+      front_depth = 2;
+
+      // Photo cutout
+      translate([inner_photo_position.x, inner_photo_position.y, -0.001]) cube([inner_photo_dimensions.x, inner_photo_dimensions.y, thickness * 2]);
+      translate([inner_photo_position.x - inner_photo_margin - outer_photo_margin, inner_photo_position.y - inner_photo_margin - outer_photo_margin, -2]) cube([outer_photo_dimensions.x, outer_photo_dimensions.y, thickness]);
+      
+      // Back clip slots
+      translate([
+        inner_photo_position.x - inner_photo_margin - outer_photo_margin - 3,
+        inner_photo_position.y + (inner_photo_dimensions.y - 5)/2,
+        thickness - front_depth - 2
+      ]) cube([20, 5, 2]);
+      translate([
+        inner_photo_position.x + inner_photo_dimensions.x + inner_photo_margin + outer_photo_margin - 20 + 3,
+        inner_photo_position.y + (inner_photo_dimensions.y - 5)/2,
+        thickness - front_depth - 2
+      ]) cube([20, 5, 2]);
+    }
+  }
+}
+
+if (object_type == "back") {
+  len_x = outer_photo_dimensions.x - 0.5;
+  len_y = outer_photo_dimensions.y - 0.5;
+  
+  difference() {
+    cube([len_x, len_y, back_plate_thickness]);
+    
+    translate([-0.001, (len_y - 5)/2, -1]) cube([15, 4+1, back_plate_thickness+2]);
+    translate([len_x+0.001 - 15, (len_y - 5)/2, -1]) cube([15, 4+1, back_plate_thickness+2]);
+  }
+  
+  translate([-1.5, (len_y - 4)/2, 0]) clip();
+  translate([len_x + 1.5, 4 + (len_y - 4)/2, 0]) rotate([0, 0, 180]) clip();
+}
