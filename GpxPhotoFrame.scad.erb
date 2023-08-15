@@ -321,8 +321,13 @@ if (object_type == "frame") {
     // Hangers on the back.
     // These need to go on the text plate because we don't know the
     // shape of the chart in advance.
-    translate([20, plate_height-10, -0.001]) hanger_hole();
-    translate([width-20, plate_height-10, -0.001]) hanger_hole();
+    if (type == 1) {
+      translate([6, plate_height-10, -0.001]) hanger_hole();
+      translate([width-6, plate_height-10, -0.001]) hanger_hole();
+    } else {
+      translate([20, plate_height-10, -0.001]) hanger_hole();
+      translate([width-20, plate_height-10, -0.001]) hanger_hole();
+    }
 
     if (photo_box[type]) {
       front_depth = 2;
